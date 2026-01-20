@@ -1,57 +1,50 @@
-# WaveshareESP32C6LCD
-Waveshare ESP32-C6 1.47" LCD Dev Board
+# Waveshare ESP32-C6 1.47" LCD — Bandwatch
 
-## Bandwatch (Wi-Fi air quality)
+Bandwatch is a Wi‑Fi **activity** meter for the ESP32‑C6 + 1.47" LCD. It observes 802.11 traffic in promiscuous mode and reports a **busy score** as a proxy for channel busyness. It does **not** measure RF power or calibrated airtime.
 
-Bandwatch is a simple “how crowded is the Wi‑Fi air around me?” view. It doesn’t measure true RF power; it estimates **how many networks are nearby and how strong they are**.
+## Measurement pipeline
 
-### What’s on screen
+- **Promiscuous capture**: counts real 802.11 frames (no decryption).
+- **Channel hopping**: channels **1–13** with ~**260 ms** dwell; full sweep in ~3–4 s.
+- **Per‑channel metrics** every dwell: frames, bytes, “strong” frames (RSSI ≥ −65 dBm), and best‑effort unique transmitters (hashed MACs in fixed slots).
+- **Busy score (0–100)**: log‑scaled packets/s, bytes/s, strong‑frame proportion, and unique‑talker estimate.
+- **Smoothing**: exponential moving average (α ≈ **0.22**) on the busy score only; raw counters are not smoothed.
+- **Global activity**: **maximum** of the smoothed channel scores (stated in the UI).
 
-- **Bar (0–100%)**: The main “crowdedness” indicator.
-	- **Green**: quiet air (few and/or weak nearby networks)
-	- **Yellow**: moderately busy
-	- **Red**: very noisy (many and/or strong nearby networks)
+## On-screen layout (compact)
 
-- **WIFI _N_ APs**: How many access points were found in the *last completed scan*.
-	- More APs usually pushes the bar up, especially if their signals are strong.
+- **Global bar**: 0–100 with green → yellow → red ramp.
+- **Top 3**: busiest channels with smoothed score plus last dwell counts (packets, strong, unique).
+- **Channel strip**: channels 1–13 with mini bars; active dwell channel marked with `*`.
+- **Dwell line**: current channel, dwell time, live packet and byte counts during the ongoing window.
 
-- **DEC 0–255**: The same interference level, shown as a byte (base‑10).
-	- `0` means “essentially quiet”.
-	- `255` means “very crowded” (according to this heuristic).
-	- This is just a convenient compact number for display and the binary row.
+## Configuration knobs (in `Tamagotchi.cpp`)
 
-- **HEX 0x00–0xFF**: The same byte as **DEC**, but displayed in hexadecimal.
-	- Example: `DEC 170` equals `HEX 0xAA`.
-	- If you’re not used to hex, you can ignore this—it's the same info.
+- `kDwellMs` (default 260 ms): per‑channel dwell; keep 200–400 ms.
+- `kStrongThresholdDbm` (default −65 dBm): strong-frame cutoff.
+- `kBusyEmaAlpha` (default 0.22): busy-score smoothing (target 0.15–0.30).
+- `kChannelCount` (default 13): set to 11 if you only need channels 1–11.
 
-- **Bits row (8 boxes)**: The DEC/HEX byte shown in binary.
-	- Leftmost box is the **most significant bit** (bit 7), rightmost is bit 0.
-	- **Purple** = `1`, dark = `0`.
-	- This is mainly for a “techy” visual pattern; it’s still the same value.
+## Performance and safety
 
-### How the interference number is computed
+- Promiscuous callback only counts and hashes (no dynamic allocation, no UI work).
+- Fixed-size structures: 13 channels × bounded unique MAC slots.
+- UI timers keep rendering responsive during hopping.
 
-1. The ESP32 does a Wi‑Fi scan and collects the RSSI (signal strength) for each network.
-2. Each network contributes a weight based on RSSI:
-	 - around **−100 dBm** contributes ~0
-	 - around **−40 dBm** contributes ~1
-	 - values are clamped to 0–1
-3. Those weights are summed and normalized so that “about a dozen strong networks” feels like “very noisy”.
+## What Bandwatch does *not* do
 
-This produces a raw value in the range 0–1. That value is then:
-- shown as **Bar %** (`0–100`)
-- mapped to a byte for **DEC/HEX/Bits** (`0–255`)
+- It does **not** measure true airtime occupancy.
+- It does **not** detect non‑Wi‑Fi interference (Bluetooth, Zigbee, microwaves, etc.).
+- It does **not** replace professional RF analysis tools or calibrated spectrum measurements.
 
-### Smoothing and update timing
+## Quick validation
 
-- **Scan interval**: about every **3.5 seconds** (asynchronous scan; the UI stays responsive).
-- **Smoothing**: the displayed value is an **exponential moving average** of the raw scan result, so the bar doesn’t jump wildly when one scan sees more/fewer networks.
-- **UI refresh**: roughly every **120 ms**; between scans it mostly re-draws the same smoothed value.
+- Start a video stream or large file download near the device; the serving channel’s score should rise.
+- Add multiple active clients on the same channel; top‑3 should reshuffle to include that channel.
+- In a quiet environment, scores should stay low and stable after smoothing.
 
-### Layout
+## Build / flash (Arduino IDE)
 
-Designed for the **172×320** display:
-- Title header at the top
-- Interference bar centered vertically
-- Text readouts below
-- Binary boxes near the bottom (wrapping to fit the narrow width)
+1. Select the **ESP32-C6** board profile.
+2. Open `WaveshareESP32C6LCD.ino` and ensure `LVGL` and display dependencies are installed.
+3. Flash to the board; the UI should appear and begin hopping within a few seconds.
