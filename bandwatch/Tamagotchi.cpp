@@ -101,6 +101,8 @@ lv_obj_t* globalLabel = nullptr;
 lv_obj_t* methodLabel = nullptr;
 lv_obj_t* topRows[3] = {nullptr};
 lv_obj_t* stripBars[3] = {nullptr};
+lv_obj_t* apLabel = nullptr;
+uint16_t lastApSeen = 0;
 
 Adafruit_NeoPixel rgb(kRgbCount, kRgbPin, NEO_GRB + NEO_KHZ800);
 
@@ -305,38 +307,40 @@ void buildUi() {
     methodLabel = make_label(header, "max", c565(CYAN_565));
     lv_obj_align(methodLabel, LV_ALIGN_RIGHT_MID, -2, 0);
 
-    // Global activity bar
+    // Global activity bar (taller to fill vertical space)
     lv_obj_t* globalWrap = lv_obj_create(root);
-    lv_obj_set_size(globalWrap, LV_PCT(100), 50);
+    lv_obj_set_size(globalWrap, LV_PCT(100), 90);
     lv_obj_set_style_bg_color(globalWrap, c565(PANEL_565), 0);
     lv_obj_set_style_border_width(globalWrap, 0, 0);
     lv_obj_set_style_radius(globalWrap, 6, 0);
-    lv_obj_set_style_pad_all(globalWrap, 8, 0);
-    lv_obj_align(globalWrap, LV_ALIGN_TOP_MID, 0, 40);
+    lv_obj_set_style_pad_all(globalWrap, 10, 0);
+    lv_obj_align(globalWrap, LV_ALIGN_TOP_MID, 0, 28);
+
     globalLabel = make_label(globalWrap, "0", c565(WHITE_565), true);
-    lv_obj_align(globalLabel, LV_ALIGN_TOP_LEFT, 0, -2);
+    lv_obj_align(globalLabel, LV_ALIGN_TOP_MID, 0, 0);
 
     globalBar = lv_bar_create(globalWrap);
     lv_bar_set_range(globalBar, 0, 100);
-    lv_obj_set_size(globalBar, 150, 12);
+    lv_obj_set_size(globalBar, 190, 18);
     lv_obj_align(globalBar, LV_ALIGN_BOTTOM_MID, 0, -4);
     lv_obj_set_style_bg_color(globalBar, c565(BLACK_565), 0);
     lv_obj_set_style_bg_opa(globalBar, LV_OPA_40, 0);
 
     // Top 3 busiest channels
+    // Top 3 (expanded height to fill more of the 320px screen)
     lv_obj_t* topBox = lv_obj_create(root);
-    lv_obj_set_size(topBox, LV_PCT(100), 82);
+    lv_obj_set_size(topBox, LV_PCT(100), 170);
     lv_obj_set_style_bg_color(topBox, c565(BG_565), 0);
     lv_obj_set_style_border_width(topBox, 0, 0);
-    lv_obj_set_style_pad_all(topBox, 6, 0);
-    lv_obj_set_style_pad_row(topBox, 6, 0);
+    lv_obj_set_style_pad_all(topBox, 8, 0);
+    lv_obj_set_style_pad_row(topBox, 10, 0);
     lv_obj_set_flex_flow(topBox, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(topBox, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
-    lv_obj_align(topBox, LV_ALIGN_TOP_MID, 0, 92);
+    lv_obj_align(topBox, LV_ALIGN_TOP_MID, 0, 124);
     make_label(topBox, "Top 3", c565(YELLOW_565), true);
     for (int i = 0; i < 3; i++) {
         lv_obj_t* row = lv_obj_create(topBox);
-        lv_obj_set_size(row, LV_PCT(100), 18);
+        lv_obj_set_size(row, LV_PCT(100), 28);
         lv_obj_set_style_bg_color(row, c565(BG_565), 0);
         lv_obj_set_style_border_width(row, 0, 0);
         lv_obj_set_style_pad_all(row, 0, 0);
@@ -348,13 +352,18 @@ void buildUi() {
 
         lv_obj_t* mini = lv_bar_create(row);
         lv_bar_set_range(mini, 0, 100);
-        lv_obj_set_size(mini, 90, 10);
+        lv_obj_set_size(mini, 120, 14);
         lv_obj_set_style_bg_color(mini, c565(BLACK_565), 0);
         lv_obj_set_style_bg_opa(mini, LV_OPA_30, 0);
         lv_obj_set_style_radius(mini, 3, 0);
         // Reuse stripBars slot to keep a tiny bar per top channel
         stripBars[i] = mini;
     }
+
+    // AP count at the bottom
+    apLabel = make_label(root, "APs --", c565(YELLOW_565), true);
+    lv_obj_set_style_text_font(apLabel, &lv_font_montserrat_14, 0);
+    lv_obj_align(apLabel, LV_ALIGN_BOTTOM_LEFT, 6, -16);
 }
 
 void refreshUi() {
@@ -401,6 +410,12 @@ void refreshUi() {
     live.strong = g_accum.strong;
     live.unique = g_accum.unique;
     portEXIT_CRITICAL(&g_accumMux);
+
+    if (live.unique > 0) {
+        lastApSeen = live.unique;
+    }
+    snprintf(buf, sizeof(buf), "APs %u", static_cast<unsigned int>(lastApSeen));
+    lv_label_set_text(apLabel, buf);
 
 }
 
