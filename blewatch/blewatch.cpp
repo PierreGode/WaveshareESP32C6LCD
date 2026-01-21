@@ -16,8 +16,15 @@
 
 namespace {
 
-constexpr uint32_t kUiIntervalMs = 80;
+constexpr uint32_t kUiIntervalMs = 40;
 constexpr uint32_t kDeviceStaleMs = 3500;
+
+// Scan tuning: smaller scan cycles + higher duty-cycle => faster state updates.
+// Note: this will increase power consumption.
+constexpr uint32_t kBleScanDurationS = 1;
+constexpr uint16_t kBleScanInterval = 16;
+constexpr uint16_t kBleScanWindow = 16;
+constexpr uint32_t kBleScanLoopDelayMs = 5;
 
 // LED (WS2812) config (matches Bandwatch defaults)
 constexpr int kRgbPin = 8;
@@ -167,14 +174,14 @@ void bleTask(void* param) {
   NimBLEScan* scan = NimBLEDevice::getScan();
   scan->setAdvertisedDeviceCallbacks(&g_advCb, true /* want duplicates */);
   scan->setActiveScan(true);
-  scan->setInterval(45);
-  scan->setWindow(15);
+  scan->setInterval(kBleScanInterval);
+  scan->setWindow(kBleScanWindow);
 
   while (true) {
     // Run short scans repeatedly (keeps memory stable on Arduino builds)
-    scan->start(2 /* seconds */, false /* is_continue */);
+    scan->start(kBleScanDurationS /* seconds */, false /* is_continue */);
     scan->clearResults();
-    vTaskDelay(pdMS_TO_TICKS(20));
+    vTaskDelay(pdMS_TO_TICKS(kBleScanLoopDelayMs));
   }
 }
 
@@ -197,18 +204,35 @@ class AdvCallbacks : public BLEAdvertisedDeviceCallbacks {
 
 AdvCallbacks g_advCb;
 
+// Some ESP32 BLE libraries expose a "want duplicates" overload, others don't.
+// This helper picks the best available overload at compile time.
+template <typename T>
+auto setBleCallbacksWithDuplicates(T* scan, BLEAdvertisedDeviceCallbacks* cb, int)
+  -> decltype(scan->setAdvertisedDeviceCallbacks(cb, true), void()) {
+  scan->setAdvertisedDeviceCallbacks(cb, true);
+}
+
+template <typename T>
+void setBleCallbacksWithDuplicates(T* scan, BLEAdvertisedDeviceCallbacks* cb, ...) {
+  scan->setAdvertisedDeviceCallbacks(cb);
+}
+
 void bleTask(void* param) {
   (void)param;
 
   BLEDevice::init("");
   BLEScan* scan = BLEDevice::getScan();
-  scan->setAdvertisedDeviceCallbacks(&g_advCb);
+  setBleCallbacksWithDuplicates(scan, &g_advCb, 0);
   scan->setActiveScan(true);
 
+  // Prefer a high duty-cycle scan when supported.
+  scan->setInterval(kBleScanInterval);
+  scan->setWindow(kBleScanWindow);
+
   while (true) {
-    scan->start(2 /* seconds */, false /* is_continue */);
+    scan->start(kBleScanDurationS /* seconds */, false /* is_continue */);
     scan->clearResults();
-    vTaskDelay(pdMS_TO_TICKS(20));
+    vTaskDelay(pdMS_TO_TICKS(kBleScanLoopDelayMs));
   }
 }
 
