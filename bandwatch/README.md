@@ -14,9 +14,9 @@ Bandwatch is a Wi‑Fi **activity** meter for the ESP32‑C6 + 1.47" LCD. It obs
 ## On-screen layout (compact)
 
 - **Global bar**: 0–100 with green → yellow → red ramp.
-- **Top 3**: busiest channels with smoothed score plus last dwell counts (packets, strong, unique).
-- **Channel strip**: channels 1–13 with mini bars; active dwell channel marked with `*`.
+- **Top 3**: busiest channels with smoothed score plus last dwell counts (packets, strong, unique) and a mini bar per channel.
 - **Dwell line**: current channel, dwell time, live packet and byte counts during the ongoing window.
+- **RGB LED**: mirrors global activity (green → yellow → orange → red).
 
 ## Configuration knobs (in `Tamagotchi.cpp`)
 
@@ -24,6 +24,7 @@ Bandwatch is a Wi‑Fi **activity** meter for the ESP32‑C6 + 1.47" LCD. It obs
 - `kStrongThresholdDbm` (default −65 dBm): strong-frame cutoff.
 - `kBusyEmaAlpha` (default 0.22): busy-score smoothing (target 0.15–0.30).
 - `kChannelCount` (default 13): set to 11 if you only need channels 1–11.
+- `kRgbPin` / `kRgbCount`: onboard WS2812 RGB LED (default pin 8, one diode).
 
 ## Performance and safety
 
@@ -46,5 +47,5 @@ Bandwatch is a Wi‑Fi **activity** meter for the ESP32‑C6 + 1.47" LCD. It obs
 ## Build / flash (Arduino IDE)
 
 1. Select the **ESP32-C6** board profile.
-2. Open `WaveshareESP32C6LCD.ino` and ensure `LVGL` and display dependencies are installed.
+2. Open `WaveshareESP32C6LCD.ino` and ensure `LVGL`, display deps, and `Adafruit_NeoPixel` are installed.
 3. Flash to the board; the UI should appear and begin hopping within a few seconds.

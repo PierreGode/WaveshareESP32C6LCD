@@ -5,6 +5,8 @@
 #include <esp_wifi.h>
 #include <esp_wifi_types.h>
 #include <math.h>
+#include <Adafruit_NeoPixel.h>  // Requires Adafruit NeoPixel library (Library Manager)
+#define HAVE_NEOPIXEL 1
 
 namespace {
 
@@ -16,6 +18,8 @@ constexpr int kChannelCount = 13;           // 2.4 GHz 1–13
 constexpr int kStrongThresholdDbm = -65;    // "Strong" frame threshold
 constexpr float kBusyEmaAlpha = 0.22f;      // Smoothing within required 0.15–0.30
 constexpr int kUniqueSlots = 24;            // Best-effort unique transmitter slots
+constexpr int kRgbPin = 8;                  // Onboard RGB LED data pin (WS2812)
+constexpr int kRgbCount = 1;                // Single diode
 
 // Simple RGB565 colors
 inline lv_color_t c565(uint16_t v) {
@@ -37,6 +41,12 @@ constexpr uint16_t RED_565     = 0xF800;
 constexpr uint16_t CYAN_565    = 0x07FF;
 constexpr uint16_t PURPLE_565  = 0x780F; // violet accent
 constexpr uint16_t YELLOW_565  = 0xFFE0;
+
+struct RgbColor { uint8_t r; uint8_t g; uint8_t b; };
+constexpr RgbColor LED_GREEN  = {0, 180, 40};
+constexpr RgbColor LED_YELLOW = {255, 200, 0};
+constexpr RgbColor LED_ORANGE = {255, 120, 0};
+constexpr RgbColor LED_RED    = {255, 24, 0};
 
 struct Accum {
     uint32_t frames = 0;
@@ -90,9 +100,19 @@ lv_obj_t* globalBar = nullptr;
 lv_obj_t* globalLabel = nullptr;
 lv_obj_t* methodLabel = nullptr;
 lv_obj_t* topRows[3] = {nullptr};
-lv_obj_t* stripBars[kChannelCount] = {nullptr};
-lv_obj_t* stripLabels[kChannelCount] = {nullptr};
-lv_obj_t* dwellLabel = nullptr;
+lv_obj_t* stripBars[3] = {nullptr};
+
+Adafruit_NeoPixel rgb(kRgbCount, kRgbPin, NEO_GRB + NEO_KHZ800);
+
+inline void setLedColor(const RgbColor& c, uint8_t brightness = 60) {
+    if (!HAVE_NEOPIXEL) return;
+    const uint16_t scale = static_cast<uint16_t>(brightness) * 255 / 100;
+    const uint8_t r = static_cast<uint8_t>((static_cast<uint16_t>(c.r) * scale) / 255);
+    const uint8_t g = static_cast<uint8_t>((static_cast<uint16_t>(c.g) * scale) / 255);
+    const uint8_t b = static_cast<uint8_t>((static_cast<uint16_t>(c.b) * scale) / 255);
+    rgb.setPixelColor(0, rgb.Color(r, g, b));
+    rgb.show();
+}
 
 inline float clamp01(float v) {
     if (v < 0.0f) return 0.0f;
@@ -293,7 +313,7 @@ void buildUi() {
     lv_obj_set_style_radius(globalWrap, 6, 0);
     lv_obj_set_style_pad_all(globalWrap, 8, 0);
     lv_obj_align(globalWrap, LV_ALIGN_TOP_MID, 0, 40);
-    globalLabel = make_label(globalWrap, "Global 0", c565(WHITE_565), true);
+    globalLabel = make_label(globalWrap, "0", c565(WHITE_565), true);
     lv_obj_align(globalLabel, LV_ALIGN_TOP_LEFT, 0, -2);
 
     globalBar = lv_bar_create(globalWrap);
@@ -305,54 +325,36 @@ void buildUi() {
 
     // Top 3 busiest channels
     lv_obj_t* topBox = lv_obj_create(root);
-    lv_obj_set_size(topBox, LV_PCT(100), 74);
+    lv_obj_set_size(topBox, LV_PCT(100), 82);
     lv_obj_set_style_bg_color(topBox, c565(BG_565), 0);
     lv_obj_set_style_border_width(topBox, 0, 0);
-    lv_obj_set_style_pad_all(topBox, 4, 0);
+    lv_obj_set_style_pad_all(topBox, 6, 0);
+    lv_obj_set_style_pad_row(topBox, 6, 0);
+    lv_obj_set_flex_flow(topBox, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(topBox, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
     lv_obj_align(topBox, LV_ALIGN_TOP_MID, 0, 92);
-    make_label(topBox, "Top", c565(YELLOW_565), true);
+    make_label(topBox, "Top 3", c565(YELLOW_565), true);
     for (int i = 0; i < 3; i++) {
-        topRows[i] = make_label(topBox, "--", c565(WHITE_565));
-        lv_obj_set_style_text_font(topRows[i], &lv_font_montserrat_14, 0);
-        lv_obj_align(topRows[i], LV_ALIGN_TOP_LEFT, 0, 14 + i * 18);
-    }
-
-    // Channel strip visualization
-    lv_obj_t* strip = lv_obj_create(root);
-    lv_obj_set_size(strip, LV_PCT(100), 132);
-    lv_obj_set_style_bg_color(strip, c565(PANEL_565), 0);
-    lv_obj_set_style_border_width(strip, 0, 0);
-    lv_obj_set_style_radius(strip, 6, 0);
-    lv_obj_set_style_pad_all(strip, 4, 0);
-    lv_obj_set_style_pad_row(strip, 4, 0);
-    lv_obj_set_flex_flow(strip, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_flex_align(strip, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_align(strip, LV_ALIGN_BOTTOM_MID, 0, -4);
-
-    for (int i = 0; i < kChannelCount; i++) {
-        lv_obj_t* row = lv_obj_create(strip);
-        lv_obj_set_size(row, LV_PCT(100), 14);
+        lv_obj_t* row = lv_obj_create(topBox);
+        lv_obj_set_size(row, LV_PCT(100), 18);
         lv_obj_set_style_bg_color(row, c565(BG_565), 0);
         lv_obj_set_style_border_width(row, 0, 0);
         lv_obj_set_style_pad_all(row, 0, 0);
         lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
         lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
-        stripLabels[i] = make_label(row, "Ch01", c565(CYAN_565));
-        lv_obj_set_style_text_font(stripLabels[i], &lv_font_montserrat_14, 0);
-        lv_obj_set_width(stripLabels[i], 34);
+        topRows[i] = make_label(row, "--", c565(WHITE_565));
+        lv_obj_set_style_text_font(topRows[i], &lv_font_montserrat_14, 0);
 
-        stripBars[i] = lv_bar_create(row);
-        lv_bar_set_range(stripBars[i], 0, 100);
-        lv_obj_set_size(stripBars[i], 112, 10);
-        lv_obj_set_style_bg_color(stripBars[i], c565(BLACK_565), 0);
-        lv_obj_set_style_bg_opa(stripBars[i], LV_OPA_30, 0);
-        lv_obj_set_style_radius(stripBars[i], 3, 0);
+        lv_obj_t* mini = lv_bar_create(row);
+        lv_bar_set_range(mini, 0, 100);
+        lv_obj_set_size(mini, 90, 10);
+        lv_obj_set_style_bg_color(mini, c565(BLACK_565), 0);
+        lv_obj_set_style_bg_opa(mini, LV_OPA_30, 0);
+        lv_obj_set_style_radius(mini, 3, 0);
+        // Reuse stripBars slot to keep a tiny bar per top channel
+        stripBars[i] = mini;
     }
-
-    dwellLabel = make_label(root, "Channel dwell", c565(WHITE_565));
-    lv_obj_set_style_text_font(dwellLabel, &lv_font_montserrat_14, 0);
-    lv_obj_align(dwellLabel, LV_ALIGN_TOP_LEFT, 6, 232);
 }
 
 void refreshUi() {
@@ -364,8 +366,19 @@ void refreshUi() {
     else if (global > 40.0f) barColor = c565(YELLOW_565);
     lv_obj_set_style_bg_color(globalBar, barColor, LV_PART_INDICATOR);
 
+    // Drive onboard RGB LED based on global activity
+    if (global > 75.0f) {
+        setLedColor(LED_RED);
+    } else if (global > 50.0f) {
+        setLedColor(LED_ORANGE);
+    } else if (global > 25.0f) {
+        setLedColor(LED_YELLOW);
+    } else {
+        setLedColor(LED_GREEN);
+    }
+
     char buf[64];
-    snprintf(buf, sizeof(buf), "Global %.0f", global);
+    snprintf(buf, sizeof(buf), "%.0f", global);
     lv_label_set_text(globalLabel, buf);
 
     int top[3];
@@ -376,14 +389,9 @@ void refreshUi() {
             continue;
         }
         const ChannelState& ch = channels[top[i]];
-        snprintf(buf, sizeof(buf), "%d)%02d %.0f p:%lu s:%u u:%u", i + 1, top[i] + 1, ch.busyEma, static_cast<unsigned long>(ch.metrics.frames), ch.metrics.strong, ch.metrics.unique);
+        snprintf(buf, sizeof(buf), "%d %02d %.0f", i + 1, top[i] + 1, ch.busyEma);
         lv_label_set_text(topRows[i], buf);
-    }
-
-    for (int i = 0; i < kChannelCount; i++) {
-        snprintf(buf, sizeof(buf), "Ch%02d%s", i + 1, (i + 1 == currentChannel) ? " *" : "");
-        lv_label_set_text(stripLabels[i], buf);
-        lv_bar_set_value(stripBars[i], static_cast<int>(channels[i].busyEma + 0.5f), LV_ANIM_OFF);
+        lv_bar_set_value(stripBars[i], static_cast<int>(ch.busyEma + 0.5f), LV_ANIM_OFF);
     }
 
     Accum live{};
@@ -394,8 +402,6 @@ void refreshUi() {
     live.unique = g_accum.unique;
     portEXIT_CRITICAL(&g_accumMux);
 
-    snprintf(buf, sizeof(buf), "Ch%02d dwell%lums pkt %lu bytes %lu", currentChannel, static_cast<unsigned long>(kDwellMs), static_cast<unsigned long>(live.frames), static_cast<unsigned long>(live.bytes));
-    lv_label_set_text(dwellLabel, buf);
 }
 
 void uiTimerCb(lv_timer_t* t) {
@@ -408,6 +414,14 @@ void uiTimerCb(lv_timer_t* t) {
 } // namespace
 
 void Tamagotchi_Init(void) {
+    if (HAVE_NEOPIXEL) {
+        rgb.begin();
+        rgb.setBrightness(60);
+        rgb.clear();
+        rgb.show();
+        setLedColor(LED_ORANGE, 80); // boot blip to confirm LED wiring
+        delay(150);
+    }
     buildUi();
     lv_timer_create(uiTimerCb, kUiIntervalMs, nullptr);
     ensureWifiMonitor();
