@@ -6,7 +6,7 @@
 ******************************************************************************/
 #include "LVGL_Driver.h"
 
-#include "bandwatch.h"
+#include "blewatch.h"
 
 static lv_color_t buf1[ LVGL_BUF_LEN ];
 static lv_color_t buf2[ LVGL_BUF_LEN ];
@@ -54,7 +54,7 @@ void Lvgl_Init(void)
   lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);
   lv_indev_set_read_cb(indev, Lvgl_Touchpad_Read);
 
-  Bandwatch_Init();
+  Blewatch_Init();
 
   const esp_timer_create_args_t lvgl_tick_timer_args = {
     .callback = &example_increase_lvgl_tick,
