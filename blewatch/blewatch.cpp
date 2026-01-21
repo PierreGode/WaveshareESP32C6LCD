@@ -27,7 +27,7 @@ constexpr uint16_t kNeoPixelType = NEO_RGB + NEO_KHZ800;
 // Proximity heuristics (RSSI is not distance; these are tunable)
 constexpr int kFarRssiDbm = -80;        // below this -> treat as far/none
 constexpr int kNearStartRssiDbm = -70;  // start pulsing green
-constexpr int kVeryCloseRssiDbm = -35;  // ~"within 5cm" heuristic => steady blue
+constexpr int kVeryCloseRssiDbm = -40;  // ~"very close" heuristic => steady blue
 
 // Pulse behavior
 constexpr float kMinPulseHz = 0.35f;    // slow pulse when just "near"
