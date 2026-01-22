@@ -131,9 +131,9 @@ Active security: The Flipper team patches vulnerabilities
 The Problem
 We're flagging all STMicro OUIs because:
 
-We can't tell STM32WB55 from BlueNRG by MAC alone
-Many STMicro-based IoT devices don't get updates
-Options
-Keep as-is: Accept some false positives (conservative approach)
-Remove STMicro: Reduces false positives but misses vulnerable BlueNRG devices
+- We can't tell STM32WB55 from BlueNRG by MAC alone
+- Many STMicro-based IoT devices don't get updates
+- Options
+- Keep as-is: Accept some false positives (conservative approach)
+- Remove STMicro: Reduces false positives but misses vulnerable BlueNRG devices- 
 Add note: Explain that actively-updated devices (like Flipper) are likely safe despite the warning
