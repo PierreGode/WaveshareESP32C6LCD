@@ -33,7 +33,8 @@ constexpr uint16_t kNeoPixelType = NEO_RGB + NEO_KHZ800;
 
 // Proximity heuristics (RSSI is not distance; these are tunable)
 constexpr int kFarRssiDbm = -80;        // below this -> treat as far/none
-constexpr int kNearStartRssiDbm = -70;  // start pulsing green
+constexpr int kNearStartRssiDbm = -67;  // start pulsing green
+constexpr int kCloseStartRssiDbm = -50; // close band starts (steady green)
 constexpr int kVeryCloseRssiDbm = -40;  // ~"very close" heuristic => steady blue
 
 // Pulse behavior
@@ -76,6 +77,7 @@ struct RgbColor { uint8_t r; uint8_t g; uint8_t b; };
 constexpr RgbColor LED_OFF  = {0, 0, 0};
 constexpr RgbColor LED_GREEN = {0, 180, 40};
 constexpr RgbColor LED_ORANGE = {255, 90, 0};
+constexpr RgbColor LED_CYAN = {0, 180, 180};
 constexpr RgbColor LED_BLUE  = {0, 60, 255};
 
 inline float clamp01(float v) {
@@ -300,9 +302,16 @@ void buildUi() {
 }
 
 float rssiToNearT(int bestRssi) {
-  // Map [-70 .. -40] -> [0..1]
+  // Map [near start .. close start] -> [0..1]
   const float t = (static_cast<float>(bestRssi) - static_cast<float>(kNearStartRssiDbm)) /
-                  (static_cast<float>(-40) - static_cast<float>(kNearStartRssiDbm));
+                  (static_cast<float>(kCloseStartRssiDbm) - static_cast<float>(kNearStartRssiDbm));
+  return clamp01(t);
+}
+
+float rssiToCloseT(int bestRssi) {
+  // Map [close start .. very close] -> [0..1]
+  const float t = (static_cast<float>(bestRssi) - static_cast<float>(kCloseStartRssiDbm)) /
+                  (static_cast<float>(kVeryCloseRssiDbm) - static_cast<float>(kCloseStartRssiDbm));
   return clamp01(t);
 }
 
@@ -332,7 +341,7 @@ void updateLedAndUi() {
     return;
   }
 
-  // Extra step: RSSI in [-80..-70) is "too far" (weak but present).
+  // Extra step: RSSI in [-80..-67) is "too far" (weak but present).
   if (bestRssi < kNearStartRssiDbm) {
     lv_label_set_text(g_stateLabel, "TOO FAR");
     lv_bar_set_value(g_bar, 0, LV_ANIM_OFF);
@@ -344,6 +353,15 @@ void updateLedAndUi() {
     lv_label_set_text(g_stateLabel, "VERY CLOSE");
     lv_bar_set_value(g_bar, 100, LV_ANIM_OFF);
     setLedColor(LED_BLUE, 100);
+    return;
+  }
+
+  // Close: steady green in [-50..-40)
+  if (bestRssi >= kCloseStartRssiDbm) {
+    const float ct = rssiToCloseT(bestRssi);
+    lv_label_set_text(g_stateLabel, "CLOSE");
+    lv_bar_set_value(g_bar, static_cast<int>(70.0f + ct * 30.0f + 0.5f), LV_ANIM_OFF);
+    setLedColor(LED_CYAN, 100);
     return;
   }
 
@@ -362,7 +380,7 @@ void updateLedAndUi() {
   const uint8_t b = static_cast<uint8_t>(trough + (peak - trough) * s);
 
   lv_label_set_text(g_stateLabel, "NEAR");
-  lv_bar_set_value(g_bar, static_cast<int>(t * 100.0f + 0.5f), LV_ANIM_OFF);
+  lv_bar_set_value(g_bar, static_cast<int>(t * 70.0f + 0.5f), LV_ANIM_OFF);
   setLedColor(LED_GREEN, b);
 }
 
