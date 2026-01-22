@@ -45,10 +45,7 @@ To build and flash these projects, you need the Arduino IDE referencing the ESP3
 #### B. Select the Board
 1. Go to **Tools > Board > ESP32 Arduino**.
 2. Select **ESP32C6 Dev Module** (or *Waveshare ESP32-C6-LCD-1.47* if available in your version).
-3. configure the settings (typical defaults):
-   - **Upload Speed**: 921600 or 115200
-   - **USB CDC On Boot**: Enabled (allows Serial output over USB)
-   - **Flash Mode**: DIO
+
 
 ### 2. Install Required Libraries
 
