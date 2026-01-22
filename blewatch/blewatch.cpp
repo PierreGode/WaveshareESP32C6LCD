@@ -75,6 +75,7 @@ Adafruit_NeoPixel g_rgb(kRgbCount, kRgbPin, kNeoPixelType);
 struct RgbColor { uint8_t r; uint8_t g; uint8_t b; };
 constexpr RgbColor LED_OFF  = {0, 0, 0};
 constexpr RgbColor LED_GREEN = {0, 180, 40};
+constexpr RgbColor LED_ORANGE = {255, 90, 0};
 constexpr RgbColor LED_BLUE  = {0, 60, 255};
 
 inline float clamp01(float v) {
@@ -328,6 +329,14 @@ void updateLedAndUi() {
     lv_label_set_text(g_stateLabel, "FAR");
     lv_bar_set_value(g_bar, 0, LV_ANIM_OFF);
     setLedColor(LED_OFF, 0);
+    return;
+  }
+
+  // Extra step: RSSI in [-80..-70) is "too far" (weak but present).
+  if (bestRssi < kNearStartRssiDbm) {
+    lv_label_set_text(g_stateLabel, "TOO FAR");
+    lv_bar_set_value(g_bar, 0, LV_ANIM_OFF);
+    setLedColor(LED_ORANGE, 100);
     return;
   }
 
