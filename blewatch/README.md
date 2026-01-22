@@ -32,6 +32,12 @@ When a device stays in VERY CLOSE range for **3 seconds**, the OUI (first 3 byte
 | Potentially vulnerable | **Red** | Steady **red** |
 | Not in vulnerable list | **Green** | **Blinks green twice**, then steady blue |
 
+
+## Current Behavior
+| Multiple devices | Multiple OUIs | Displayed | Sorting | Initial scan |
+|------------------|---------------|-----------|---------|--------------|
+| Tracks up to 64 devices internally| Checks against 39 OUI entries|Only shows 1 device (the strongest RSSI in VERY CLOSE)|By RSSI (strongest first), not MAC|No — jumps straight to live mode|
+
 ### Flagged Vendors (OUI list)
 
 This list includes vendors with **documented BLE CVEs** (BlueBorne, SweynTooth, BrakTooth, KNOB, etc.) whose chips are typically found in devices **without over-the-air update capability** — meaning vulnerabilities often remain unpatched throughout the device's lifetime.
@@ -107,3 +113,28 @@ https://www.waveshare.com/wiki/ESP32-C6-LCD-1.47
 - **No active probing**: Only passive advertisement scanning; cannot detect patched firmware.
 - **Name availability**: Many BLE devices don't advertise names; MAC is shown as fallback.
 - **RSSI ≠ distance**: Signal strength varies with obstacles, orientation, and interference.
+
+## Example
+
+- Flipper Zero triggered red because it uses an STMicroelectronics STM32WB55 chip, and its MAC address starts with an STMicro OUI (likely 00:80:E1 or similar) that's in our list.
+
+Why It Matched
+Flipper Zero	Our List Entry
+Uses STM32WB55 (STMicro chip)	STMicroelectronics flagged for BlueNRG CVE-2019-17519
+MAC starts with STMicro OUI	We have 00:80:E1, 80:E1:26, 02:80:E1
+Is Flipper Zero Actually Vulnerable?
+Probably not — this is a limitation of OUI-based detection:
+
+Different chip: The STM32WB55 uses a different BLE stack than BlueNRG (which had the CVE)
+
++ updates: Flipper Zero has OTA updates via qFlipper app
+Active security: The Flipper team patches vulnerabilities
+
+#### The Problem, We're flagging all STMicro OUIs because:
+
+- We can't tell STM32WB55 from BlueNRG by MAC alone
+- Many STMicro-based IoT devices don't get updates
+- Options
+- Keep as-is: Accept some false positives (conservative approach)
+- Remove STMicro: Reduces false positives but misses vulnerable BlueNRG devices- 
+Add note: Explain that actively-updated devices (like Flipper) are likely safe despite the warning
