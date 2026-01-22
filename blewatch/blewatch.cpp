@@ -4,6 +4,7 @@
 #include <math.h>
 #include <lvgl.h>
 #include <Adafruit_NeoPixel.h>
+#include <string>
 
 #if __has_include(<NimBLEDevice.h>)
   #include <NimBLEDevice.h>
@@ -53,6 +54,7 @@ struct DeviceSlot {
   uint8_t mac[6] = {0};
   uint32_t lastSeenMs = 0;
   int8_t lastRssi = -127;
+  char name[32] = {0};
   bool used = false;
 };
 
@@ -69,6 +71,7 @@ lv_obj_t* g_title = nullptr;
 lv_obj_t* g_countLabel = nullptr;
 lv_obj_t* g_rssiLabel = nullptr;
 lv_obj_t* g_stateLabel = nullptr;
+lv_obj_t* g_nameLabel = nullptr;
 lv_obj_t* g_bar = nullptr;
 
 Adafruit_NeoPixel g_rgb(kRgbCount, kRgbPin, kNeoPixelType);
@@ -79,6 +82,50 @@ constexpr RgbColor LED_GREEN = {0, 180, 40};
 constexpr RgbColor LED_ORANGE = {255, 90, 0};
 constexpr RgbColor LED_CYAN = {0, 180, 180};
 constexpr RgbColor LED_BLUE  = {0, 60, 255};
+constexpr RgbColor LED_RED   = {255, 0, 0};
+
+// OUI prefixes (first 3 bytes) of vendors historically affected by BLE vulnerabilities
+// (BlueBorne, KNOB, etc.). This is indicative, not definitive.
+struct OuiEntry { uint8_t oui[3]; };
+constexpr OuiEntry kVulnerableOuis[] = {
+  {{0x00, 0x1A, 0x7D}},  // Cyber-Blue (Bluetooth dongles)
+  {{0x00, 0x02, 0x72}},  // CC&C Technologies (various BT chips)
+  {{0x00, 0x25, 0xDB}},  // Qualcomm (various)
+  {{0x9C, 0x8C, 0xD8}},  // Qualcomm
+  {{0x00, 0x26, 0xE8}},  // Qualcomm Atheros
+  {{0x00, 0x03, 0x7A}},  // Texas Instruments
+  {{0xD0, 0x5F, 0xB8}},  // Texas Instruments
+  {{0x34, 0xB1, 0xF7}},  // Broadcom
+  {{0x00, 0x10, 0x18}},  // Broadcom
+  {{0xAC, 0x37, 0x43}},  // Samsung (older devices)
+  {{0x8C, 0xF5, 0xA3}},  // Samsung
+  {{0x78, 0xD7, 0x5F}},  // Samsung
+};
+constexpr size_t kVulnerableOuiCount = sizeof(kVulnerableOuis) / sizeof(kVulnerableOuis[0]);
+
+inline bool isOuiPotentiallyVulnerable(const uint8_t mac[6]) {
+  for (size_t i = 0; i < kVulnerableOuiCount; i++) {
+    if (mac[0] == kVulnerableOuis[i].oui[0] &&
+        mac[1] == kVulnerableOuis[i].oui[1] &&
+        mac[2] == kVulnerableOuis[i].oui[2]) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// Track VERY CLOSE dwell time for vulnerability check
+uint8_t g_veryCloseMac[6] = {0};
+uint32_t g_veryCloseStartMs = 0;
+constexpr uint32_t kVulnCheckDwellMs = 3000;  // 3 seconds
+
+// Stickiness: only switch displayed device if new one is significantly stronger.
+constexpr int kStickyRssiMarginDb = 10;
+
+// Safe-blink animation: blink green twice when device is confirmed safe.
+bool g_safeBlinkTriggered = false;   // Has the blink been triggered for current device?
+uint32_t g_safeBlinkStartMs = 0;     // When the blink animation started.
+constexpr uint32_t kBlinkDurationMs = 600;  // Total duration of 2-blink animation.
 
 inline float clamp01(float v) {
   if (v < 0.0f) return 0.0f;
@@ -99,7 +146,19 @@ inline uint16_t macHash16(const uint8_t* mac) {
   return (static_cast<uint16_t>(mac[4]) << 8) | mac[5];
 }
 
+inline void formatMac(const uint8_t mac[6], char* out, size_t outLen) {
+  if (!out || outLen == 0) return;
+  snprintf(out, outLen, "%02X:%02X:%02X:%02X:%02X:%02X",
+           mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+}
+
+void noteDeviceSeen(const uint8_t mac[6], int rssi, const char* name);
+
 void noteDeviceSeen(const uint8_t mac[6], int rssi) {
+  noteDeviceSeen(mac, rssi, nullptr);
+}
+
+void noteDeviceSeen(const uint8_t mac[6], int rssi, const char* name) {
   const uint32_t nowMs = millis();
   const uint16_t h = macHash16(mac);
 
@@ -130,22 +189,69 @@ void noteDeviceSeen(const uint8_t mac[6], int rssi) {
     g_devices[idx].lastSeenMs = nowMs;
     g_devices[idx].lastRssi = static_cast<int8_t>(rssi);
     g_devices[idx].used = true;
+
+    if (name && name[0] != '\0') {
+      strncpy(g_devices[idx].name, name, sizeof(g_devices[idx].name) - 1);
+      g_devices[idx].name[sizeof(g_devices[idx].name) - 1] = '\0';
+    }
   }
 
   portEXIT_CRITICAL(&g_mux);
 }
 
-int countActiveDevicesAndBestRssi(int* outBestRssi) {
+int countActiveDevicesAndBest(int* outBestRssi, char* outBestName, size_t outBestNameLen, uint8_t outBestMac[6]) {
   const uint32_t nowMs = millis();
   int count = 0;
   int best = -127;
+  int bestIdx = -1;
+
+  // Check if currently tracked VERY CLOSE device is still valid.
+  int stickyIdx = -1;
+  int stickyRssi = -127;
 
   portENTER_CRITICAL(&g_mux);
   for (int i = 0; i < kMaxDevices; i++) {
     if (!g_devices[i].used) continue;
     if ((nowMs - g_devices[i].lastSeenMs) <= kDeviceStaleMs) {
       count++;
-      if (g_devices[i].lastRssi > best) best = g_devices[i].lastRssi;
+      const int devRssi = g_devices[i].lastRssi;
+
+      // Track absolute best.
+      if (devRssi > best) {
+        best = devRssi;
+        bestIdx = i;
+      }
+
+      // Check if this is our sticky (currently tracked) device.
+      if (memcmp(g_devices[i].mac, g_veryCloseMac, 6) == 0) {
+        stickyIdx = i;
+        stickyRssi = devRssi;
+      }
+    }
+  }
+
+  // Stickiness logic: if the sticky device is still VERY CLOSE, keep it
+  // unless the new best is significantly stronger.
+  if (stickyIdx >= 0 && stickyRssi >= kVeryCloseRssiDbm) {
+    // Only switch if new best is > kStickyRssiMarginDb stronger.
+    if (bestIdx != stickyIdx && (best - stickyRssi) <= kStickyRssiMarginDb) {
+      bestIdx = stickyIdx;
+      best = stickyRssi;
+    }
+  }
+
+  if (outBestName && outBestNameLen > 0) {
+    outBestName[0] = '\0';
+    if (bestIdx >= 0) {
+      strncpy(outBestName, g_devices[bestIdx].name, outBestNameLen - 1);
+      outBestName[outBestNameLen - 1] = '\0';
+    }
+  }
+
+  if (outBestMac) {
+    memset(outBestMac, 0, 6);
+    if (bestIdx >= 0) {
+      memcpy(outBestMac, g_devices[bestIdx].mac, 6);
     }
   }
   portEXIT_CRITICAL(&g_mux);
@@ -163,7 +269,14 @@ class AdvCallbacks : public NimBLEAdvertisedDeviceCallbacks {
     const NimBLEAddress addr = dev->getAddress();
     uint8_t mac[6];
     memcpy(mac, addr.getNative(), 6);
-    noteDeviceSeen(mac, rssi);
+
+    // Only pull name when "very close" to keep callback lightweight.
+    if (rssi >= kVeryCloseRssiDbm) {
+      const std::string name = dev->getName();
+      noteDeviceSeen(mac, rssi, name.empty() ? nullptr : name.c_str());
+    } else {
+      noteDeviceSeen(mac, rssi);
+    }
   }
 };
 
@@ -192,7 +305,7 @@ void bleTask(void* param) {
 
 class AdvCallbacks : public BLEAdvertisedDeviceCallbacks {
   void onResult(BLEAdvertisedDevice dev) override {
-    // BLEAdvertisedDevice in this library uses std::string; avoid heavy work
+    // Keep callbacks lightweight.
     const int rssi = dev.getRSSI();
     const String s = dev.getAddress().toString();
     uint8_t mac[6] = {0};
@@ -200,7 +313,14 @@ class AdvCallbacks : public BLEAdvertisedDeviceCallbacks {
     unsigned int b[6];
     if (sscanf(s.c_str(), "%02x:%02x:%02x:%02x:%02x:%02x", &b[0], &b[1], &b[2], &b[3], &b[4], &b[5]) == 6) {
       for (int i = 0; i < 6; i++) mac[i] = static_cast<uint8_t>(b[i]);
-      noteDeviceSeen(mac, rssi);
+
+      // Only pull name when "very close" to keep callback lightweight.
+      if (rssi >= kVeryCloseRssiDbm) {
+        const String name = dev.getName();
+        noteDeviceSeen(mac, rssi, (name.length() == 0) ? nullptr : name.c_str());
+      } else {
+        noteDeviceSeen(mac, rssi);
+      }
     }
   }
 };
@@ -299,6 +419,11 @@ void buildUi() {
   g_stateLabel = makeLabel(g_root, "FAR", lv_color_hex(0xFFFFFF), &lv_font_montserrat_20);
   lv_obj_align(g_stateLabel, LV_ALIGN_TOP_MID, 0, 230);
   lv_obj_set_style_text_align(g_stateLabel, LV_TEXT_ALIGN_CENTER, 0);
+
+  g_nameLabel = makeLabel(g_root, "", lv_color_hex(0x8BE9FD), &lv_font_montserrat_14);
+  lv_obj_align(g_nameLabel, LV_ALIGN_TOP_MID, 0, 258);
+  lv_obj_set_style_text_align(g_nameLabel, LV_TEXT_ALIGN_CENTER, 0);
+  lv_obj_add_flag(g_nameLabel, LV_OBJ_FLAG_HIDDEN);
 }
 
 float rssiToNearT(int bestRssi) {
@@ -317,7 +442,9 @@ float rssiToCloseT(int bestRssi) {
 
 void updateLedAndUi() {
   int bestRssi = -127;
-  const int count = countActiveDevicesAndBestRssi(&bestRssi);
+  char bestName[32] = {0};
+  uint8_t bestMac[6] = {0};
+  const int count = countActiveDevicesAndBest(&bestRssi, bestName, sizeof(bestName), bestMac);
 
   // UI text
   char buf[64];
@@ -336,23 +463,99 @@ void updateLedAndUi() {
 
   if (count == 0 || bestRssi < kFarRssiDbm) {
     lv_label_set_text(g_stateLabel, "FAR");
+    lv_obj_add_flag(g_nameLabel, LV_OBJ_FLAG_HIDDEN);
     lv_bar_set_value(g_bar, 0, LV_ANIM_OFF);
     setLedColor(LED_OFF, 0);
+    // Reset VERY CLOSE tracking.
+    memset(g_veryCloseMac, 0, 6);
+    g_veryCloseStartMs = 0;
+    g_safeBlinkTriggered = false;
     return;
   }
 
   // Extra step: RSSI in [-80..-67) is "too far" (weak but present).
   if (bestRssi < kNearStartRssiDbm) {
     lv_label_set_text(g_stateLabel, "TOO FAR");
+    lv_obj_add_flag(g_nameLabel, LV_OBJ_FLAG_HIDDEN);
     lv_bar_set_value(g_bar, 0, LV_ANIM_OFF);
     setLedColor(LED_ORANGE, 100);
+    // Reset VERY CLOSE tracking.
+    memset(g_veryCloseMac, 0, 6);
+    g_veryCloseStartMs = 0;
+    g_safeBlinkTriggered = false;
     return;
   }
 
   if (bestRssi >= kVeryCloseRssiDbm) {
     lv_label_set_text(g_stateLabel, "VERY CLOSE");
+
+    // Track how long this device has been VERY CLOSE.
+    bool sameDevice = (memcmp(g_veryCloseMac, bestMac, 6) == 0);
+    if (!sameDevice) {
+      memcpy(g_veryCloseMac, bestMac, 6);
+      g_veryCloseStartMs = nowMs;
+      g_safeBlinkTriggered = false;  // Reset blink for new device.
+    }
+    const uint32_t dwellMs = nowMs - g_veryCloseStartMs;
+
+    // After 3 seconds, check OUI for potential vulnerability.
+    bool showVulnWarning = false;
+    if (dwellMs >= kVulnCheckDwellMs) {
+      showVulnWarning = isOuiPotentiallyVulnerable(bestMac);
+    }
+
+    // Build display string (name or MAC).
+    char displayBuf[48];
+    if (bestName[0] != '\0') {
+      strncpy(displayBuf, bestName, sizeof(displayBuf) - 1);
+      displayBuf[sizeof(displayBuf) - 1] = '\0';
+    } else {
+      formatMac(bestMac, displayBuf, sizeof(displayBuf));
+    }
+
+    lv_obj_clear_flag(g_nameLabel, LV_OBJ_FLAG_HIDDEN);
+    lv_label_set_text(g_nameLabel, displayBuf);
+
+    // Color the label: red if potentially vulnerable, green if safe, default cyan while checking.
+    if (dwellMs >= kVulnCheckDwellMs) {
+      if (showVulnWarning) {
+        lv_obj_set_style_text_color(g_nameLabel, lv_color_hex(0xFF0000), 0);  // red
+      } else {
+        lv_obj_set_style_text_color(g_nameLabel, lv_color_hex(0x00FF00), 0);  // green
+      }
+    } else {
+      lv_obj_set_style_text_color(g_nameLabel, lv_color_hex(0x8BE9FD), 0);  // cyan (checking...)
+    }
+
     lv_bar_set_value(g_bar, 100, LV_ANIM_OFF);
-    setLedColor(LED_BLUE, 100);
+
+    // LED behavior.
+    if (showVulnWarning) {
+      // Vulnerable: steady red.
+      setLedColor(LED_RED, 100);
+    } else if (dwellMs >= kVulnCheckDwellMs) {
+      // Safe: blink green twice, then steady blue.
+      if (!g_safeBlinkTriggered) {
+        g_safeBlinkTriggered = true;
+        g_safeBlinkStartMs = nowMs;
+      }
+      const uint32_t blinkElapsed = nowMs - g_safeBlinkStartMs;
+      if (blinkElapsed < kBlinkDurationMs) {
+        // Two blinks in 600ms: on 0-100, off 100-200, on 200-300, off 300-400, then done.
+        const uint32_t phase = blinkElapsed % 200;
+        const uint32_t cycle = blinkElapsed / 200;
+        if (cycle < 2 && phase < 100) {
+          setLedColor(LED_GREEN, 100);  // Blink on.
+        } else {
+          setLedColor(LED_OFF, 0);      // Blink off.
+        }
+      } else {
+        setLedColor(LED_BLUE, 100);     // After blink, steady blue.
+      }
+    } else {
+      // Still checking: steady blue.
+      setLedColor(LED_BLUE, 100);
+    }
     return;
   }
 
@@ -360,6 +563,7 @@ void updateLedAndUi() {
   if (bestRssi >= kCloseStartRssiDbm) {
     const float ct = rssiToCloseT(bestRssi);
     lv_label_set_text(g_stateLabel, "CLOSE");
+    lv_obj_add_flag(g_nameLabel, LV_OBJ_FLAG_HIDDEN);
     lv_bar_set_value(g_bar, static_cast<int>(70.0f + ct * 30.0f + 0.5f), LV_ANIM_OFF);
     setLedColor(LED_CYAN, 100);
     return;
@@ -380,6 +584,7 @@ void updateLedAndUi() {
   const uint8_t b = static_cast<uint8_t>(trough + (peak - trough) * s);
 
   lv_label_set_text(g_stateLabel, "NEAR");
+  lv_obj_add_flag(g_nameLabel, LV_OBJ_FLAG_HIDDEN);
   lv_bar_set_value(g_bar, static_cast<int>(t * 70.0f + 0.5f), LV_ANIM_OFF);
   setLedColor(LED_GREEN, b);
 }
