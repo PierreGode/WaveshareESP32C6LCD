@@ -126,10 +126,11 @@ Is Flipper Zero Actually Vulnerable?
 Probably not — this is a limitation of OUI-based detection:
 
 Different chip: The STM32WB55 uses a different BLE stack than BlueNRG (which had the CVE)
-Gets updates: Flipper Zero has OTA updates via qFlipper app
+
++ updates: Flipper Zero has OTA updates via qFlipper app
 Active security: The Flipper team patches vulnerabilities
-The Problem
-We're flagging all STMicro OUIs because:
+
+#### The Problem, We're flagging all STMicro OUIs because:
 
 - We can't tell STM32WB55 from BlueNRG by MAC alone
 - Many STMicro-based IoT devices don't get updates
