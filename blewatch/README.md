@@ -24,7 +24,7 @@ BleWatch is a **BLE proximity meter** with vendor vulnerability indication for t
 
 ## Vulnerability Check (VERY CLOSE only)
 
-When a device stays in VERY CLOSE range for **3 seconds**, the OUI (first 3 bytes of MAC) is checked against vendors historically affected by BLE vulnerabilities (BlueBorne, KNOB, etc.):
+When a device stays in VERY CLOSE range for **3 seconds**, the OUI (first 3 bytes of MAC) is checked against vendors historically affected by BLE vulnerabilities (BlueBorne, KNOB, etc, see OUI list.):
 
 | Result | Label Color | LED Behavior |
 |--------|-------------|--------------|
