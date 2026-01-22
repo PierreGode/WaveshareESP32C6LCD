@@ -32,6 +32,12 @@ When a device stays in VERY CLOSE range for **3 seconds**, the OUI (first 3 byte
 | Potentially vulnerable | **Red** | Steady **red** |
 | Not in vulnerable list | **Green** | **Blinks green twice**, then steady blue |
 
+
+## Current Behavior
+| Multiple devices | Multiple OUIs | Displayed | Sorting | Initial scan |
+|------------------|---------------|-----------|---------|--------------|
+| Tracks up to 64 devices internally| Checks against 39 OUI entries|Only shows 1 device (the strongest RSSI in VERY CLOSE)|By RSSI (strongest first), not MAC|No — jumps straight to live mode|
+
 ### Flagged Vendors (OUI list)
 
 This list includes vendors with **documented BLE CVEs** (BlueBorne, SweynTooth, BrakTooth, KNOB, etc.) whose chips are typically found in devices **without over-the-air update capability** — meaning vulnerabilities often remain unpatched throughout the device's lifetime.
