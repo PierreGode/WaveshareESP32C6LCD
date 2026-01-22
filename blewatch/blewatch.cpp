@@ -85,21 +85,55 @@ constexpr RgbColor LED_BLUE  = {0, 60, 255};
 constexpr RgbColor LED_RED   = {255, 0, 0};
 
 // OUI prefixes (first 3 bytes) of vendors historically affected by BLE vulnerabilities
-// (BlueBorne, KNOB, etc.). This is indicative, not definitive.
+// (BlueBorne, KNOB, SweynTooth, BrakTooth, etc.). Focused on vendors whose devices
+// typically do NOT receive firmware patches (legacy chips, IoT, dongles).
 struct OuiEntry { uint8_t oui[3]; };
 constexpr OuiEntry kVulnerableOuis[] = {
-  {{0x00, 0x1A, 0x7D}},  // Cyber-Blue (Bluetooth dongles)
-  {{0x00, 0x02, 0x72}},  // CC&C Technologies (various BT chips)
-  {{0x00, 0x25, 0xDB}},  // Qualcomm (various)
-  {{0x9C, 0x8C, 0xD8}},  // Qualcomm
-  {{0x00, 0x26, 0xE8}},  // Qualcomm Atheros
-  {{0x00, 0x03, 0x7A}},  // Texas Instruments
-  {{0xD0, 0x5F, 0xB8}},  // Texas Instruments
-  {{0x34, 0xB1, 0xF7}},  // Broadcom
-  {{0x00, 0x10, 0x18}},  // Broadcom
-  {{0xAC, 0x37, 0x43}},  // Samsung (older devices)
-  {{0x8C, 0xF5, 0xA3}},  // Samsung
-  {{0x78, 0xD7, 0x5F}},  // Samsung
+  // Qualcomm / Qualcomm Atheros (BlueBorne, BlueFrag)
+  {{0x00, 0x25, 0xDB}},
+  {{0x9C, 0x8C, 0xD8}},
+  {{0x00, 0x26, 0xE8}},
+  
+  // Texas Instruments (SweynTooth, BrakTooth)
+  {{0x00, 0x03, 0x7A}},
+  {{0xD0, 0x5F, 0xB8}},
+  {{0x00, 0x17, 0xE9}},
+  
+  // Broadcom (BlueBorne, various stack bugs)
+  {{0x34, 0xB1, 0xF7}},
+  {{0x00, 0x10, 0x18}},
+  {{0x00, 0x19, 0x86}},
+  
+  // Samsung older devices (uses affected Broadcom/Qualcomm chips)
+  {{0xAC, 0x37, 0x43}},
+  {{0x8C, 0xF5, 0xA3}},
+  {{0x78, 0xD7, 0x5F}},
+  
+  // CSR (now Qualcomm) - very old chips, never patched
+  {{0x00, 0x02, 0x5B}},
+  {{0x00, 0x25, 0xBC}},
+  {{0x00, 0x1B, 0xDC}},
+  
+  // Dialog Semiconductor (SweynTooth) - IoT/wearables, rarely patched
+  {{0x80, 0xEA, 0xCA}},
+  {{0x00, 0x80, 0x25}},
+  
+  // Microchip (SweynTooth) - embedded devices, rarely updated
+  {{0x00, 0x04, 0xA3}},
+  {{0xD8, 0x80, 0x39}},
+  
+  // Silicon Labs (BrakTooth) - legacy industrial IoT
+  {{0x00, 0x0B, 0x57}},
+  {{0x84, 0x2E, 0x14}},
+  
+  // Cypress older chips (SweynTooth) - before Infineon acquisition
+  {{0x00, 0xA0, 0x50}},
+  {{0x00, 0x10, 0xC6}},
+  
+  // Generic BT dongles (often use vulnerable CSR/Broadcom chips)
+  {{0x00, 0x1A, 0x7D}},  // Cyber-Blue
+  {{0x00, 0x02, 0x72}},  // CC&C Technologies
+  {{0x00, 0x15, 0x83}},  // RF Micro Devices
 };
 constexpr size_t kVulnerableOuiCount = sizeof(kVulnerableOuis) / sizeof(kVulnerableOuis[0]);
 
