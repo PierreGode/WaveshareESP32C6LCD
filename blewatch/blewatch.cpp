@@ -1,5 +1,4 @@
 #include "blewatch.h"
-
 #include <Arduino.h>
 #include <math.h>
 #include <lvgl.h>
