@@ -1,51 +1,87 @@
-# Waveshare ESP32-C6 1.47" LCD — Bandwatch
+# Waveshare ESP32-C6 1.47" LCD — BleWatch
 
-Bandwatch is a Wi‑Fi **activity** meter for the ESP32‑C6 + 1.47" LCD. It observes 802.11 traffic in promiscuous mode and reports a **busy score** as a proxy for channel busyness. It does **not** measure RF power or calibrated airtime.
+BleWatch is a **BLE proximity meter** with vendor vulnerability indication for the ESP32-C6 + 1.47" LCD. It scans for nearby Bluetooth Low Energy devices and provides visual feedback on proximity and potential security concerns.
 
-## Measurement pipeline
+## Features
 
-- **Promiscuous capture**: counts real 802.11 frames (no decryption).
-- **Channel hopping**: channels **1–13** with ~**260 ms** dwell; full sweep in ~3–4 s.
-- **Per‑channel metrics** every dwell: frames, bytes, “strong” frames (RSSI ≥ −65 dBm), and best‑effort unique transmitters (hashed MACs in fixed slots).
-- **Busy score (0–100)**: log‑scaled packets/s, bytes/s, strong‑frame proportion, and unique‑talker estimate.
-- **Smoothing**: exponential moving average (α ≈ **0.22**) on the busy score only; raw counters are not smoothed.
-- **Global activity**: **maximum** of the smoothed channel scores (stated in the UI).
+- **BLE device scanning**: Continuously scans for nearby BLE devices using the standard ESP32 BLE library.
+- **Proximity detection**: Shows distance state based on RSSI thresholds.
+- **Device identification**: Displays device name (if advertised) or MAC address.
+- **Vendor vulnerability check**: After 3 seconds in VERY CLOSE range, checks if the device's OUI matches vendors with known historical BLE CVEs.
+- **RGB LED feedback**: Color-coded LED indicates proximity and security status.
 
-## On-screen layout (compact)
+## Proximity States
 
-- **Global bar**: 0–100 with green → yellow → red ramp.
-- **Top 3**: busiest channels with smoothed score plus last dwell counts (packets, strong, unique) and a mini bar per channel.
-- **Dwell line**: current channel, dwell time, live packet and byte counts during the ongoing window.
-- **RGB LED**: mirrors global activity (green → yellow → orange → red).
+| State | RSSI Range | Bar | LED | Description |
+|-------|------------|-----|-----|-------------|
+| FAR | < −80 dBm | 0% | Off | No nearby devices or signal too weak |
+| TOO FAR | −80 to −67 dBm | 0% | Orange | Device detected but too far for reliable tracking |
+| NEAR | −67 to −50 dBm | 0–70% | Pulsing green | Device in range, pulse speed increases with proximity |
+| CLOSE | −50 to −40 dBm | 70–100% | Cyan | Device is close |
+| VERY CLOSE | ≥ −40 dBm | 100% | Blue → see below | Device is very close, name/MAC displayed |
 
-## Configuration knobs (in `Tamagotchi.cpp`)
+## Vulnerability Check (VERY CLOSE only)
 
-- `kDwellMs` (default 260 ms): per‑channel dwell; keep 200–400 ms.
-- `kStrongThresholdDbm` (default −65 dBm): strong-frame cutoff.
-- `kBusyEmaAlpha` (default 0.22): busy-score smoothing (target 0.15–0.30).
-- `kChannelCount` (default 13): set to 11 if you only need channels 1–11.
-- `kRgbPin` / `kRgbCount`: onboard WS2812 RGB LED (default pin 8, one diode).
+When a device stays in VERY CLOSE range for **3 seconds**, the OUI (first 3 bytes of MAC) is checked against vendors historically affected by BLE vulnerabilities (BlueBorne, KNOB, etc.):
 
-## Performance and safety
+| Result | Label Color | LED Behavior |
+|--------|-------------|--------------|
+| Checking... (< 3s) | Cyan | Steady blue |
+| Potentially vulnerable | **Red** | Steady **red** |
+| Not in vulnerable list | **Green** | **Blinks green twice**, then steady blue |
 
-- Promiscuous callback only counts and hashes (no dynamic allocation, no UI work).
-- Fixed-size structures: 13 channels × bounded unique MAC slots.
-- UI timers keep rendering responsive during hopping.
+### Flagged Vendors (OUI list)
 
-## What Bandwatch does *not* do
+- Qualcomm / Qualcomm Atheros
+- Broadcom
+- Texas Instruments
+- Samsung (older chipsets)
+- Various generic Bluetooth dongles
 
-- It does **not** measure true airtime occupancy.
-- It does **not** detect non‑Wi‑Fi interference (Bluetooth, Zigbee, microwaves, etc.).
-- It does **not** replace professional RF analysis tools or calibrated spectrum measurements.
+> **Important**: Red means the vendor has shipped vulnerable firmware in the past — the specific device may have been patched. Green means the vendor is not in our list — it does not guarantee the device is secure.
 
-## Quick validation
+## Sticky Device Selection
 
-- Start a video stream or large file download near the device; the serving channel’s score should rise.
-- Add multiple active clients on the same channel; top‑3 should reshuffle to include that channel.
-- In a quiet environment, scores should stay low and stable after smoothing.
+When multiple devices are in range, BleWatch "locks on" to the current VERY CLOSE device and only switches if:
+- The current device drops below VERY CLOSE threshold, or
+- Another device is **10+ dBm stronger**
 
-## Build / flash (Arduino IDE)
+This prevents the display from jumping between devices due to RSSI fluctuations.
 
+## On-Screen Layout
+
+- **Header**: "BLEwatch" title
+- **Nearby devices**: Count of active BLE devices in range
+- **Proximity bar**: Visual 0–100% indicator
+- **RSSI**: Current best signal strength in dBm
+- **State label**: FAR / TOO FAR / NEAR / CLOSE / VERY CLOSE
+- **Name/MAC label**: Shown in VERY CLOSE, color indicates security status
+
+## Configuration (in `blewatch.cpp`)
+
+| Constant | Default | Description |
+|----------|---------|-------------|
+| `kFarRssiDbm` | −80 | Below this = FAR |
+| `kNearStartRssiDbm` | −67 | Start of NEAR range |
+| `kCloseStartRssiDbm` | −50 | Start of CLOSE range |
+| `kVeryCloseRssiDbm` | −40 | Start of VERY CLOSE range |
+| `kVulnCheckDwellMs` | 3000 | Milliseconds before vulnerability check |
+| `kStickyRssiMarginDb` | 10 | dB margin for switching displayed device |
+| `kRgbPin` | 8 | WS2812 RGB LED pin |
+| `kDeviceStaleMs` | 3500 | Device timeout for "active" status |
+
+## Build / Flash (Arduino IDE)
+https://www.waveshare.com/wiki/ESP32-C6-LCD-1.47
 1. Select the **ESP32-C6** board profile.
-2. Open `WaveshareESP32C6LCD.ino` and ensure `LVGL`, display deps, and `Adafruit_NeoPixel` are installed.
-3. Flash to the board; the UI should appear and begin hopping within a few seconds.
+2. Open `blewatch.ino` and ensure dependencies are installed:
+   - `LVGL`
+   - `Adafruit_NeoPixel`
+   - `ESP32 ` library
+3. Flash to the board; scanning begins automatically when device is being booted.
+
+## Limitations
+
+- **Not a security scanner**: OUI-based checking is a heuristic, not a vulnerability test.
+- **No active probing**: Only passive advertisement scanning; cannot detect patched firmware.
+- **Name availability**: Many BLE devices don't advertise names; MAC is shown as fallback.
+- **RSSI ≠ distance**: Signal strength varies with obstacles, orientation, and interference.
