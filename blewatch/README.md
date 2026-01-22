@@ -1,4 +1,6 @@
 # Waveshare ESP32-C6 1.47" LCD — BleWatch
+<img width="279" height="305" alt="image" src="https://github.com/user-attachments/assets/8a087e03-83cd-454a-91df-d3c52a6a983d" />
+
 
 BleWatch is a **BLE proximity meter** with vendor vulnerability indication for the ESP32-C6 + 1.47" LCD. It scans for nearby Bluetooth Low Energy devices and provides visual feedback on proximity and potential security concerns.
 
