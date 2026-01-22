@@ -34,11 +34,31 @@ When a device stays in VERY CLOSE range for **3 seconds**, the OUI (first 3 byte
 
 ### Flagged Vendors (OUI list)
 
-- Qualcomm / Qualcomm Atheros
-- Broadcom
-- Texas Instruments
-- Samsung (older chipsets)
-- Various generic Bluetooth dongles
+This list includes vendors with **documented BLE CVEs** (BlueBorne, SweynTooth, BrakTooth, KNOB, etc.) whose chips are typically found in devices **without over-the-air update capability** — meaning vulnerabilities often remain unpatched throughout the device's lifetime.
+
+| Vendor | CVEs | Typical Devices |
+|--------|------|-----------------|
+| **Qualcomm / Atheros** | BlueBorne, BlueFrag | Older phones, tablets |
+| **Broadcom** | BlueBorne, various stack bugs | Older phones, smart TVs |
+| **Texas Instruments** | SweynTooth, BrakTooth | Medical devices, sensors |
+| **CSR (now Qualcomm)** | Various legacy | Bluetooth dongles, speakers |
+| **Dialog Semiconductor** | SweynTooth | Wearables, IoT sensors |
+| **Microchip** | SweynTooth | Industrial embedded devices |
+| **Silicon Labs** | BrakTooth | Industrial IoT, beacons |
+| **Cypress (older)** | SweynTooth | Legacy embedded products |
+| **Telink Semiconductor** | SweynTooth (CVE-2019-16336, CVE-2019-19194) | Cheap BLE devices, earbuds |
+| **STMicroelectronics (BlueNRG)** | SweynTooth (CVE-2019-17519) | Medical, industrial devices |
+| **NXP** | SweynTooth (CVE-2019-17517, CVE-2019-17518) | Embedded systems |
+| **Samsung (older chipsets)** | BlueBorne (via Broadcom/Qualcomm) | Older phones, tablets |
+| **Generic BT dongles** | Various (use CSR/Broadcom chips) | USB Bluetooth adapters |
+
+> **Why these vendors?** These chips are commonly found in:
+> - IoT devices without update mechanisms
+> - Medical/industrial equipment with long lifecycles
+> - Consumer electronics that never receive firmware updates
+> - Cheap Bluetooth accessories (dongles, earbuds, speakers)
+>
+> Vendors like Apple, Intel, and modern Android phones are **not** flagged because they actively push security patches via OS updates.
 
 > **Important**: Red means the vendor has shipped vulnerable firmware in the past — the specific device may have been patched. Green means the vendor is not in our list — it does not guarantee the device is secure.
 

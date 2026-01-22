@@ -134,6 +134,21 @@ constexpr OuiEntry kVulnerableOuis[] = {
   {{0x00, 0x1A, 0x7D}},  // Cyber-Blue
   {{0x00, 0x02, 0x72}},  // CC&C Technologies
   {{0x00, 0x15, 0x83}},  // RF Micro Devices
+  
+  // Telink Semiconductor (SweynTooth CVE-2019-16336, CVE-2019-19194) - cheap BLE SoCs
+  {{0xA4, 0xC1, 0x38}},
+  {{0x38, 0x1F, 0x8D}},
+  {{0x11, 0x22, 0x33}},  // Common Telink dev boards
+  
+  // STMicroelectronics BlueNRG (SweynTooth CVE-2019-17519) - industrial/medical
+  {{0x00, 0x80, 0xE1}},
+  {{0x80, 0xE1, 0x26}},
+  {{0x02, 0x80, 0xE1}},
+  
+  // NXP (SweynTooth CVE-2019-17517, CVE-2019-17518) - embedded devices
+  {{0x00, 0x04, 0x9F}},
+  {{0x00, 0x1F, 0xC6}},
+  {{0x00, 0x60, 0x37}},
 };
 constexpr size_t kVulnerableOuiCount = sizeof(kVulnerableOuis) / sizeof(kVulnerableOuis[0]);
 
